@@ -170,6 +170,11 @@ header h1 {
     cursor: pointer;
     transition: all 0.3s;
     width: 100%;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    position: relative;
+    z-index: 1;
 }
 
 .btn-primary {

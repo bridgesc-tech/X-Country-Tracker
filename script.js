@@ -420,7 +420,17 @@ class XCountryTracker {
         // Student view event listeners
         const addRunBtn = document.getElementById('addRunBtn');
         if (addRunBtn) {
-            addRunBtn.addEventListener('click', () => this.addRun());
+            // Add both click and touchstart for better mobile support
+            addRunBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.addRun();
+            });
+            addRunBtn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.addRun();
+            });
         }
         
         // Set today's date as default

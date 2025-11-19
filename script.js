@@ -153,8 +153,9 @@ class XCountryTracker {
             const newJoinBtn = joinBtn.cloneNode(true);
             joinBtn.parentNode.replaceChild(newJoinBtn, joinBtn);
             newJoinBtn.addEventListener('click', () => {
-                const code = document.getElementById('teamCodeInput').value.trim().toUpperCase();
-                if (code) {
+                const code = document.getElementById('teamCodeInput').value.trim();
+                // Validate 6-digit numeric code
+                if (code && /^\d{6}$/.test(code)) {
                     this.setTeamCode(code);
                     modal.style.display = 'none';
                     
@@ -167,6 +168,8 @@ class XCountryTracker {
                             this.showAppropriateView();
                         });
                     }
+                } else {
+                    alert('Please enter a valid 6-digit team code');
                 }
             });
         }
@@ -298,8 +301,9 @@ class XCountryTracker {
     }
 
     async createTeam(teamName) {
-        // Generate a unique team code
-        const teamCode = teamName.toUpperCase().replace(/\s+/g, '') + '_' + Math.random().toString(36).substr(2, 6).toUpperCase();
+        // Generate a unique 6-digit numeric team code
+        // This ensures it's always exactly 6 digits (100000 to 999999)
+        const teamCode = String(Math.floor(100000 + Math.random() * 900000));
         this.setTeamCode(teamCode);
         
         if (this.db) {
@@ -404,10 +408,7 @@ class XCountryTracker {
             switchModeBtn.addEventListener('click', () => this.switchMode());
         }
         // Removed changeTeamCodeBtn and changeStudentNameBtn - students can't change these
-        const generateTestDataBtn = document.getElementById('generateTestDataBtn');
-        if (generateTestDataBtn) {
-            generateTestDataBtn.addEventListener('click', () => this.generateTestData());
-        }
+        // Removed generateTestDataBtn - production mode
         const backToStudentsBtn = document.getElementById('backToStudentsBtn');
         if (backToStudentsBtn) {
             backToStudentsBtn.addEventListener('click', () => this.showStudentsList());
@@ -815,7 +816,7 @@ class XCountryTracker {
             return;
         }
 
-        // Try Firebase first, fall back to local test data
+        // Get data from Firebase
         let studentsMap = new Map();
         
         if (this.db) {
@@ -863,14 +864,7 @@ class XCountryTracker {
                 });
             } catch (error) {
                 console.error('Error loading from Firebase:', error);
-                // Fall through to local test data
             }
-        }
-
-        // If no Firebase data, try local test data
-        if (studentsMap.size === 0) {
-            studentsMap = this.loadLocalTestData();
-            document.getElementById('coachTeamName').textContent = `Team: ${this.teamCode} (Test Mode)`;
         }
 
         // Calculate averages
@@ -894,49 +888,7 @@ class XCountryTracker {
         }
     }
 
-    loadLocalTestData() {
-        // Check if test data exists in localStorage
-        const testDataKey = `xcountry_test_data_${this.teamCode}`;
-        const storedTestData = localStorage.getItem(testDataKey);
-        
-        if (storedTestData) {
-            try {
-                const studentsMap = new Map();
-                const testRuns = JSON.parse(storedTestData);
-                
-                testRuns.forEach(run => {
-                    const studentId = run.studentId || 'unknown';
-                    
-                    if (!studentsMap.has(studentId)) {
-                        studentsMap.set(studentId, {
-                            studentId: studentId,
-                            runs: [],
-                            totalRuns: 0,
-                            totalDistance: 0,
-                            totalScore: 0,
-                            bestScore: 0,
-                            averagePace: 0
-                        });
-                    }
-                    
-                    const student = studentsMap.get(studentId);
-                    student.runs.push(run);
-                    student.totalRuns++;
-                    student.totalDistance += run.distance || 0;
-                    student.totalScore += run.score || 0;
-                    if (run.score > student.bestScore) {
-                        student.bestScore = run.score;
-                    }
-                });
-                
-                return studentsMap;
-            } catch (error) {
-                console.error('Error loading test data:', error);
-            }
-        }
-        
-        return new Map();
-    }
+    // Removed loadLocalTestData - production mode
 
     renderTeamStats(studentsMap) {
         const statsGrid = document.getElementById('teamStatsGrid');
@@ -1395,77 +1347,7 @@ class XCountryTracker {
 
     // Removed changeTeamCode() and changeStudentName() - students can't change these
 
-    generateTestData() {
-        if (!this.teamCode) {
-            alert('Please create a team first.');
-            return;
-        }
-
-        if (!confirm('This will generate sample test data for 5 students with various runs. Continue?')) {
-            return;
-        }
-
-        const testRuns = [];
-        const studentNames = ['Alex Johnson', 'Sam Martinez', 'Jordan Lee', 'Taylor Brown', 'Casey Davis'];
-        const baseDate = new Date();
-        
-        // Generate runs for 5 students
-        for (let i = 0; i < 5; i++) {
-            const studentId = `test_student_${i + 1}`;
-            const studentName = studentNames[i];
-            
-            // Each student gets 8-12 runs over the past 30 days
-            const numRuns = 8 + Math.floor(Math.random() * 5);
-            
-            for (let j = 0; j < numRuns; j++) {
-                // Random date within last 30 days
-                const daysAgo = Math.floor(Math.random() * 30);
-                const runDate = new Date(baseDate);
-                runDate.setDate(runDate.getDate() - daysAgo);
-                const dateStr = runDate.toISOString().split('T')[0];
-                
-                // Vary distances (2-5 miles)
-                const distance = 2 + Math.random() * 3;
-                
-                // Vary times based on distance (faster students get better times)
-                // Student 0 is fastest, student 4 is slowest
-                const basePace = 7.5 + (i * 0.5); // 7:30 to 9:30 pace range
-                const paceVariation = (Math.random() - 0.5) * 1.5; // ±45 seconds
-                const pace = basePace + paceVariation;
-                const timeInMinutes = distance * pace;
-                
-                const minutes = Math.floor(timeInMinutes);
-                const seconds = Math.floor((timeInMinutes - minutes) * 60);
-                const score = this.calculateScore(distance, timeInMinutes);
-                
-                testRuns.push({
-                    id: Date.now() + (i * 1000) + j,
-                    date: dateStr,
-                    distance: parseFloat(distance.toFixed(2)),
-                    timeInMinutes: parseFloat(timeInMinutes.toFixed(2)),
-                    minutes: minutes,
-                    seconds: seconds,
-                    score: parseFloat(score.toFixed(1)),
-                    pace: parseFloat(pace.toFixed(2)),
-                    studentId: studentId,
-                    studentName: studentName || 'Student',
-                    teamCode: this.teamCode
-                });
-            }
-        }
-
-        // Sort by date (newest first)
-        testRuns.sort((a, b) => new Date(b.date) - new Date(a.date));
-
-        // Store in localStorage
-        const testDataKey = `xcountry_test_data_${this.teamCode}`;
-        localStorage.setItem(testDataKey, JSON.stringify(testRuns));
-
-        alert(`Generated ${testRuns.length} test runs for 5 students!`);
-        
-        // Refresh the dashboard
-        this.renderCoachDashboard();
-    }
+    // Removed generateTestData - production mode
 }
 
 // Update Manager Class

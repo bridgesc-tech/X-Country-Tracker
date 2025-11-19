@@ -1,6 +1,6 @@
 // Service Worker for X-Country Tracker PWA
 // Update this version number when you deploy a new version
-const APP_VERSION = '1.0.1';
+const APP_VERSION = '1.1.0';
 const CACHE_NAME = `xcountry-tracker-${APP_VERSION}`;
 const urlsToCache = [
   './',

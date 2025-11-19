@@ -38,7 +38,7 @@
             <h2>Enter Team Code</h2>
             <p style="margin-bottom: 20px; color: var(--text-secondary);">Enter your team code to join:</p>
             <div class="form-group">
-                <input type="text" id="teamCodeInput" placeholder="Enter team code" maxlength="20" style="text-transform: uppercase;">
+                <input type="text" id="teamCodeInput" placeholder="Enter 6-digit team code" maxlength="6" pattern="[0-9]{6}" inputmode="numeric">
             </div>
             <button id="joinTeamBtn" class="btn btn-primary">Join Team</button>
         </div>
@@ -188,21 +188,13 @@
 
         <!-- Students List -->
         <div class="students-section" id="studentsListSection">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                <h2 style="margin: 0;">Students</h2>
-                <button id="generateTestDataBtn" class="btn btn-secondary" style="font-size: 12px; padding: 8px 12px;">
-                    Generate Test Data
-                </button>
-            </div>
+            <h2>Students</h2>
             <div id="studentsList" class="students-list">
                 <!-- Students will be dynamically added here -->
             </div>
             <div class="empty-state" id="studentsEmptyState">
                 <p>No students have joined yet.</p>
                 <p>Share your team code with students to get started!</p>
-                <p style="margin-top: 15px; font-size: 14px; color: var(--text-secondary);">
-                    <strong>Testing?</strong> Click "Generate Test Data" to create sample student data.
-                </p>
             </div>
         </div>
 

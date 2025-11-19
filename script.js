@@ -1,7 +1,9 @@
 class XCountryTracker {
     constructor() {
         this.mode = this.getMode(); // 'student' or 'coach'
-        this.teamCode = this.getTeamCode();
+        // Don't validate team code in constructor - do it after mode is confirmed
+        const rawCode = localStorage.getItem('xcountryTeamCode');
+        this.teamCode = rawCode; // Store raw value initially
         this.studentId = this.getOrCreateStudentId();
         this.runs = this.loadRuns();
         this.scoreChart = null;
@@ -18,17 +20,38 @@ class XCountryTracker {
     initializeApp() {
         // Wait a bit for DOM to be fully ready
         setTimeout(() => {
-            // Check if mode is set, if not show mode selection
-            if (!this.mode) {
+            // Validate team code format (only clear if invalid, don't clear if null)
+            if (this.teamCode && !/^\d{6}$/.test(this.teamCode)) {
+                // Old format detected - clear it
+                console.log('Old team code format detected, clearing:', this.teamCode);
+                localStorage.removeItem('xcountryTeamCode');
+                this.teamCode = null;
+            }
+
+            // Check if setup is complete
+            const hasValidTeamCode = this.teamCode && /^\d{6}$/.test(this.teamCode);
+            const isStudentWithName = this.mode === 'student' && this.getStudentName();
+            
+            // Show mode selection if:
+            // 1. No mode is set, OR
+            // 2. Coach mode but no valid team code, OR
+            // 3. Student mode but no team code or no name
+            if (!this.mode || 
+                (this.mode === 'coach' && !hasValidTeamCode) ||
+                (this.mode === 'student' && (!hasValidTeamCode || !isStudentWithName))) {
                 this.showModeSelection();
                 return;
             }
 
+            // Setup is complete, proceed to app
             // Initialize Firebase if available
             this.initializeFirebase(() => {
                 this.setupEventListeners();
+                
+                // Show appropriate view
                 this.showAppropriateView();
-                // Check if student needs to enter name
+                
+                // Check if student needs to enter name (shouldn't happen if we got here, but just in case)
                 this.checkStudentNameOnLoad();
             });
         }, 100);
@@ -44,12 +67,25 @@ class XCountryTracker {
     }
 
     getTeamCode() {
-        return localStorage.getItem('xcountryTeamCode');
+        const code = localStorage.getItem('xcountryTeamCode');
+        // Validate that code is 6 digits (migrate from old format if needed)
+        if (code && !/^\d{6}$/.test(code)) {
+            // Old format detected - clear it
+            console.log('Old team code format detected, clearing:', code);
+            localStorage.removeItem('xcountryTeamCode');
+            return null;
+        }
+        return code;
     }
 
     setTeamCode(code) {
-        localStorage.setItem('xcountryTeamCode', code);
-        this.teamCode = code;
+        // Validate code is 6 digits before storing
+        if (code && /^\d{6}$/.test(code)) {
+            localStorage.setItem('xcountryTeamCode', code);
+            this.teamCode = code;
+        } else {
+            console.error('Invalid team code format. Must be 6 digits.');
+        }
     }
 
     getOrCreateStudentId() {
@@ -136,7 +172,19 @@ class XCountryTracker {
                 console.log('Coach mode clicked');
                 this.setMode('coach');
                 modal.style.display = 'none';
-                this.showCreateTeam();
+                
+                // Check if team code already exists and is valid
+                const existingTeamCode = this.getTeamCode();
+                if (existingTeamCode && /^\d{6}$/.test(existingTeamCode)) {
+                    // Team code exists, go directly to dashboard
+                    this.initializeFirebase(() => {
+                        this.setupEventListeners();
+                        this.showAppropriateView();
+                    });
+                } else {
+                    // No valid team code, show create team modal
+                    this.showCreateTeam();
+                }
             });
         }, 50);
     }
@@ -403,10 +451,7 @@ class XCountryTracker {
         if (closeSettingsBtn) {
             closeSettingsBtn.addEventListener('click', () => this.closeSettings());
         }
-        const switchModeBtn = document.getElementById('switchModeBtn');
-        if (switchModeBtn) {
-            switchModeBtn.addEventListener('click', () => this.switchMode());
-        }
+        // Removed switchModeBtn - mode selection is permanent
         // Removed changeTeamCodeBtn and changeStudentNameBtn - students can't change these
         // Removed generateTestDataBtn - production mode
         const backToStudentsBtn = document.getElementById('backToStudentsBtn');
@@ -1297,7 +1342,7 @@ class XCountryTracker {
         // Update current mode display
         const modeDisplay = document.getElementById('currentModeDisplay');
         if (modeDisplay) {
-            modeDisplay.textContent = `Current Mode: ${this.mode === 'coach' ? 'Coach' : 'Student'}`;
+            modeDisplay.textContent = `Mode: ${this.mode === 'coach' ? 'Coach' : 'Student'} (permanent)`;
         }
 
         // Show/hide relevant settings sections
@@ -1316,7 +1361,17 @@ class XCountryTracker {
             
             const teamCodeDisplay = document.getElementById('currentTeamCodeDisplay');
             if (teamCodeDisplay) {
-                teamCodeDisplay.textContent = `Team Code: ${this.teamCode || 'Not set'}`;
+                // Validate team code format (should be 6 digits)
+                if (this.teamCode && /^\d{6}$/.test(this.teamCode)) {
+                    teamCodeDisplay.textContent = `Team Code: ${this.teamCode}`;
+                } else {
+                    teamCodeDisplay.textContent = `Team Code: Not set`;
+                    // Clear invalid team code if it exists
+                    if (this.teamCode) {
+                        localStorage.removeItem('xcountryTeamCode');
+                        this.teamCode = null;
+                    }
+                }
             }
         } else {
             if (studentSettings) studentSettings.style.display = 'none';
@@ -1324,7 +1379,17 @@ class XCountryTracker {
             
             const coachTeamCode = document.getElementById('coachTeamCodeSettings');
             if (coachTeamCode) {
-                coachTeamCode.textContent = `Team Code: ${this.teamCode || 'Not set'}`;
+                // Validate and display team code (should be 6 digits)
+                if (this.teamCode && /^\d{6}$/.test(this.teamCode)) {
+                    coachTeamCode.textContent = `Team Code: ${this.teamCode}`;
+                } else {
+                    coachTeamCode.textContent = `Team Code: Not set (Please create a new team)`;
+                    // Clear invalid team code
+                    if (this.teamCode) {
+                        localStorage.removeItem('xcountryTeamCode');
+                        this.teamCode = null;
+                    }
+                }
             }
         }
 
@@ -1336,14 +1401,7 @@ class XCountryTracker {
         if (modal) modal.style.display = 'none';
     }
 
-    switchMode() {
-        if (confirm('Switch mode? You will need to set up your team code again.')) {
-            localStorage.removeItem('xcountryMode');
-            localStorage.removeItem('xcountryTeamCode');
-            this.closeSettings();
-            location.reload();
-        }
-    }
+    // Removed switchMode() - mode selection is permanent
 
     // Removed changeTeamCode() and changeStudentName() - students can't change these
 

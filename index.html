@@ -61,6 +61,19 @@
         </div>
     </div>
 
+    <!-- Coach Team Setup Modal (for coaches) -->
+    <div class="modal" id="coachTeamSetupModal" style="display: none;">
+        <div class="modal-content">
+            <h2>Team Setup</h2>
+            <p style="margin-bottom: 20px; color: var(--text-secondary);">Choose an option:</p>
+            
+            <div style="display: flex; flex-direction: column; gap: 15px;">
+                <button id="createNewTeamOptionBtn" class="btn btn-primary" style="width: 100%;">Create New Team</button>
+                <button id="joinExistingTeamOptionBtn" class="btn btn-secondary" style="width: 100%;">Join Existing Team</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Create Team Modal (for coaches) -->
     <div class="modal" id="createTeamModal" style="display: none;">
         <div class="modal-content">
@@ -71,6 +84,21 @@
                 <input type="text" id="teamNameInput" placeholder="e.g., Bulldogs 2025" maxlength="30">
             </div>
             <button id="createTeamBtn" class="btn btn-primary">Create Team</button>
+            <button id="backToCoachSetupBtn" class="btn btn-secondary" style="margin-top: 10px; width: 100%;">Back</button>
+        </div>
+    </div>
+
+    <!-- Join Existing Team Modal (for coaches) -->
+    <div class="modal" id="joinExistingTeamModal" style="display: none;">
+        <div class="modal-content">
+            <h2>Join Existing Team</h2>
+            <p style="margin-bottom: 20px; color: var(--text-secondary);">Enter the coach code to join an existing team:</p>
+            <div class="form-group">
+                <label for="coachTeamCodeInput">Coach Code</label>
+                <input type="text" id="coachTeamCodeInput" placeholder="Enter 6-letter coach code" maxlength="6" pattern="[A-Za-z]{6}" style="text-transform: uppercase;">
+            </div>
+            <button id="joinExistingTeamBtn" class="btn btn-primary">Join Team</button>
+            <button id="backToCoachSetupBtn2" class="btn btn-secondary" style="margin-top: 10px; width: 100%;">Back</button>
         </div>
     </div>
 
@@ -99,6 +127,10 @@
         <!-- Add Run Tab -->
         <div class="tab-content active" id="add-run-tab">
             <div class="add-run-section">
+                <div id="runConfirmationMessage" class="run-confirmation-message" style="display: none;">
+                    <span class="confirmation-icon">✓</span>
+                    <span class="confirmation-text">Run submitted successfully!</span>
+                </div>
                 <h2>Add Run</h2>
                 <div class="form-group">
                     <label for="runDate">Date</label>
@@ -280,8 +312,10 @@
                 </div>
                 <div class="settings-section" id="coachSettings" style="display: none;">
                     <h3>Team Management</h3>
-                    <p id="coachTeamCodeSettings" style="margin-bottom: 15px; color: var(--text-secondary);"></p>
-                    <button id="createNewTeamBtn" class="btn btn-secondary" style="width: 100%; margin-bottom: 10px;">Create New Team</button>
+                    <p id="coachTeamCodeSettings" style="margin-bottom: 10px; color: var(--text-secondary);"></p>
+                    <p id="playerCodeDisplay" style="margin-bottom: 10px; color: var(--text-secondary);"></p>
+                    <p id="coachCodeDisplay" style="margin-bottom: 15px; color: var(--text-secondary);"></p>
+                    <button id="createNewTeamBtn" class="btn btn-secondary" style="width: 100%; margin-bottom: 10px;">Change Team</button>
                 </div>
             </div>
         </div>

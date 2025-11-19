@@ -113,6 +113,40 @@ header h1 {
     color: var(--text-primary);
 }
 
+.run-confirmation-message {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: var(--success-color);
+    color: white;
+    padding: 16px 20px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+    font-weight: 600;
+    font-size: 16px;
+    box-shadow: 0 4px 12px rgba(82, 196, 26, 0.3);
+    opacity: 0;
+    transform: translateY(-10px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.run-confirmation-message.show {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.confirmation-icon {
+    font-size: 24px;
+    font-weight: bold;
+    line-height: 1;
+}
+
+.confirmation-text {
+    flex: 1;
+    text-align: center;
+}
+
 .form-group {
     margin-bottom: 15px;
 }

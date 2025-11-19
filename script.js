@@ -3,7 +3,8 @@ class XCountryTracker {
         this.mode = this.getMode(); // 'student' or 'coach'
         // Don't validate team code in constructor - do it after mode is confirmed
         const rawCode = localStorage.getItem('xcountryTeamCode');
-        this.teamCode = rawCode; // Store raw value initially
+        this.teamCode = rawCode; // Store raw value initially (player code - 6 digits)
+        this.coachCode = localStorage.getItem('xcountryCoachCode'); // Coach code - 6 letters
         this.studentId = this.getOrCreateStudentId();
         this.runs = this.loadRuns();
         this.scoreChart = null;
@@ -29,24 +30,36 @@ class XCountryTracker {
             }
 
             // Check if setup is complete
-            const hasValidTeamCode = this.teamCode && /^\d{6}$/.test(this.teamCode);
+            const hasValidPlayerCode = this.teamCode && /^\d{6}$/.test(this.teamCode);
+            const hasValidCoachCode = this.getCoachCode() && /^[A-Za-z]{6}$/.test(this.getCoachCode());
             const isStudentWithName = this.mode === 'student' && this.getStudentName();
             
             // Show mode selection if:
             // 1. No mode is set, OR
-            // 2. Coach mode but no valid team code, OR
-            // 3. Student mode but no team code or no name
+            // 2. Coach mode but no valid coach code, OR
+            // 3. Student mode but no player code or no name
             if (!this.mode || 
-                (this.mode === 'coach' && !hasValidTeamCode) ||
-                (this.mode === 'student' && (!hasValidTeamCode || !isStudentWithName))) {
+                (this.mode === 'coach' && !hasValidCoachCode) ||
+                (this.mode === 'student' && (!hasValidPlayerCode || !isStudentWithName))) {
                 this.showModeSelection();
                 return;
             }
 
             // Setup is complete, proceed to app
             // Initialize Firebase if available
-            this.initializeFirebase(() => {
+            this.initializeFirebase(async () => {
                 this.setupEventListeners();
+                
+                // If student mode and has name + team code, try to load runs from Firebase
+                if (this.mode === 'student' && this.getStudentName() && this.teamCode) {
+                    // Ensure we have the correct studentId (check Firebase for existing profile)
+                    const firstName = this.getStudentFirstName();
+                    const lastName = this.getStudentLastName();
+                    if (firstName && lastName) {
+                        // This will check Firebase and load runs if profile exists
+                        await this.setStudentName(firstName, lastName);
+                    }
+                }
                 
                 // Show appropriate view
                 this.showAppropriateView();
@@ -79,13 +92,37 @@ class XCountryTracker {
     }
 
     setTeamCode(code) {
-        // Validate code is 6 digits before storing
+        // Validate code is 6 digits before storing (player code)
         if (code && /^\d{6}$/.test(code)) {
             localStorage.setItem('xcountryTeamCode', code);
             this.teamCode = code;
         } else {
             console.error('Invalid team code format. Must be 6 digits.');
         }
+    }
+    
+    setCoachCode(code) {
+        // Validate code is 6 letters before storing
+        if (code && /^[A-Za-z]{6}$/.test(code)) {
+            localStorage.setItem('xcountryCoachCode', code);
+            this.coachCode = code;
+        } else {
+            console.error('Invalid coach code format. Must be 6 letters.');
+        }
+    }
+    
+    getCoachCode() {
+        return this.coachCode || localStorage.getItem('xcountryCoachCode');
+    }
+    
+    generateCoachCode() {
+        // Generate a 6-letter alphabetic code
+        const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        let code = '';
+        for (let i = 0; i < 6; i++) {
+            code += letters.charAt(Math.floor(Math.random() * letters.length));
+        }
+        return code;
     }
 
     getOrCreateStudentId() {
@@ -120,12 +157,128 @@ class XCountryTracker {
         return localStorage.getItem('xcountryStudentLastName') || '';
     }
 
-    setStudentName(firstName, lastName) {
-        if (firstName && lastName) {
-            localStorage.setItem('xcountryStudentFirstName', firstName.trim());
-            localStorage.setItem('xcountryStudentLastName', lastName.trim());
-            // Remove old single-name format if it exists
-            localStorage.removeItem('xcountryStudentName');
+    async setStudentName(firstName, lastName) {
+        if (!firstName || !lastName || !this.teamCode) {
+            return false;
+        }
+        
+        const firstNameTrimmed = firstName.trim();
+        const lastNameTrimmed = lastName.trim();
+        
+        // Store name in localStorage
+        localStorage.setItem('xcountryStudentFirstName', firstNameTrimmed);
+        localStorage.setItem('xcountryStudentLastName', lastNameTrimmed);
+        // Remove old single-name format if it exists
+        localStorage.removeItem('xcountryStudentName');
+        
+        // Check Firebase for existing student with same name and team code
+        if (this.db) {
+            try {
+                const querySnapshot = await this.db.collection('students')
+                    .where('firstName', '==', firstNameTrimmed)
+                    .where('lastName', '==', lastNameTrimmed)
+                    .where('teamCode', '==', String(this.teamCode))
+                    .limit(1)
+                    .get();
+                
+                if (!querySnapshot.empty) {
+                    // Found existing student - use their studentId
+                    const studentDoc = querySnapshot.docs[0];
+                    const studentData = studentDoc.data();
+                    const existingStudentId = studentData.studentId;
+                    
+                    console.log('Found existing student profile:', existingStudentId);
+                    
+                    // Update studentId
+                    this.studentId = existingStudentId;
+                    localStorage.setItem('xcountryStudentId', existingStudentId);
+                    
+                    // Load runs from Firebase for this student
+                    await this.loadRunsFromFirebase();
+                    
+                    return true;
+                } else {
+                    // No existing student found - create new one
+                    const newStudentId = this.getOrCreateStudentId();
+                    
+                    // Store student in Firebase for future lookups
+                    try {
+                        await this.db.collection('students').doc(newStudentId).set({
+                            studentId: newStudentId,
+                            firstName: firstNameTrimmed,
+                            lastName: lastNameTrimmed,
+                            teamCode: String(this.teamCode),
+                            createdAt: new Date().toISOString()
+                        });
+                        console.log('Created new student profile:', newStudentId);
+                    } catch (error) {
+                        console.error('Error saving student to Firebase:', error);
+                        // Continue anyway - studentId is already set
+                    }
+                    
+                    return true;
+                }
+            } catch (error) {
+                console.error('Error checking for existing student:', error);
+                // If Firebase fails, just use local studentId
+                this.getOrCreateStudentId();
+                return true;
+            }
+        } else {
+            // Firebase not available - just use local studentId
+            this.getOrCreateStudentId();
+            return true;
+        }
+    }
+    
+    async loadRunsFromFirebase() {
+        if (!this.db || !this.studentId) return;
+        
+        try {
+            const runsSnapshot = await this.db.collection('runs')
+                .where('studentId', '==', this.studentId)
+                .orderBy('date', 'desc')
+                .get();
+            
+            const firebaseRuns = [];
+            runsSnapshot.forEach(doc => {
+                const runData = doc.data();
+                // Convert Firebase data to run object format
+                firebaseRuns.push({
+                    id: runData.id || doc.id,
+                    date: runData.date,
+                    distance: runData.distance,
+                    timeInMinutes: runData.timeInMinutes,
+                    minutes: runData.minutes || 0,
+                    seconds: runData.seconds || 0,
+                    score: runData.score,
+                    pace: runData.pace,
+                    studentId: runData.studentId,
+                    studentName: runData.studentName,
+                    teamCode: runData.teamCode
+                });
+            });
+            
+            // Merge with local runs (avoid duplicates by ID)
+            const localRuns = this.loadRuns();
+            const runIds = new Set(firebaseRuns.map(r => r.id));
+            
+            // Add local runs that aren't in Firebase
+            localRuns.forEach(localRun => {
+                if (!runIds.has(localRun.id)) {
+                    firebaseRuns.push(localRun);
+                }
+            });
+            
+            // Update runs and save
+            this.runs = firebaseRuns;
+            this.runs.sort((a, b) => new Date(b.date) - new Date(a.date));
+            this.saveRuns();
+            
+            console.log(`Loaded ${firebaseRuns.length} runs for student ${this.studentId}`);
+        } catch (error) {
+            console.error('Error loading runs from Firebase:', error);
+            // If error, just use local runs
         }
     }
 
@@ -173,17 +326,17 @@ class XCountryTracker {
                 this.setMode('coach');
                 modal.style.display = 'none';
                 
-                // Check if team code already exists and is valid
-                const existingTeamCode = this.getTeamCode();
-                if (existingTeamCode && /^\d{6}$/.test(existingTeamCode)) {
-                    // Team code exists, go directly to dashboard
+                // Check if coach code already exists and is valid
+                const existingCoachCode = this.getCoachCode();
+                if (existingCoachCode && /^[A-Za-z]{6}$/.test(existingCoachCode)) {
+                    // Coach code exists, go directly to dashboard
                     this.initializeFirebase(() => {
                         this.setupEventListeners();
                         this.showAppropriateView();
                     });
                 } else {
-                    // No valid team code, show create team modal
-                    this.showCreateTeam();
+                    // No valid coach code, show coach team setup modal
+                    this.showCoachTeamSetup();
                 }
             });
         }, 50);
@@ -254,7 +407,7 @@ class XCountryTracker {
             const newSaveBtn = saveBtn.cloneNode(true);
             saveBtn.parentNode.replaceChild(newSaveBtn, saveBtn);
             
-            const handleSave = () => {
+            const handleSave = async () => {
                 // Get fresh references to the actual DOM elements
                 const firstNameField = document.getElementById('studentFirstNameInput');
                 const lastNameField = document.getElementById('studentLastNameInput');
@@ -274,22 +427,35 @@ class XCountryTracker {
                     return;
                 }
                 
-                this.setStudentName(firstName, lastName);
-                modal.style.display = 'none';
-                
-                // If already initialized, just refresh the view
-                if (this.mode && this.teamCode) {
-                    this.showAppropriateView();
-                    // Update settings display if open
-                    const settingsModal = document.getElementById('settingsModal');
-                    if (settingsModal && settingsModal.style.display === 'block') {
-                        this.openSettings();
-                    }
-                } else {
-                    this.initializeFirebase(() => {
-                        this.setupEventListeners();
-                        this.showAppropriateView();
+                // Ensure Firebase is initialized before checking for existing student
+                if (!this.db && this.teamCode) {
+                    await new Promise((resolve) => {
+                        this.initializeFirebase(() => {
+                            resolve();
+                        });
                     });
+                }
+                
+                // Set student name (this will check for existing profile and load runs)
+                const success = await this.setStudentName(firstName, lastName);
+                
+                if (success) {
+                    modal.style.display = 'none';
+                    
+                    // If already initialized, just refresh the view
+                    if (this.mode && this.teamCode) {
+                        this.showAppropriateView();
+                        // Update settings display if open
+                        const settingsModal = document.getElementById('settingsModal');
+                        if (settingsModal && settingsModal.style.display === 'block') {
+                            this.openSettings();
+                        }
+                    } else {
+                        this.initializeFirebase(() => {
+                            this.setupEventListeners();
+                            this.showAppropriateView();
+                        });
+                    }
                 }
             };
             
@@ -321,6 +487,35 @@ class XCountryTracker {
         }
     }
 
+    showCoachTeamSetup() {
+        const modal = document.getElementById('coachTeamSetupModal');
+        if (!modal) return;
+        
+        modal.style.display = 'block';
+        
+        // Remove existing listeners and add new ones
+        const createNewBtn = document.getElementById('createNewTeamOptionBtn');
+        const joinExistingBtn = document.getElementById('joinExistingTeamOptionBtn');
+        
+        if (createNewBtn) {
+            const newCreateNewBtn = createNewBtn.cloneNode(true);
+            createNewBtn.parentNode.replaceChild(newCreateNewBtn, createNewBtn);
+            newCreateNewBtn.addEventListener('click', () => {
+                modal.style.display = 'none';
+                this.showCreateTeam();
+            });
+        }
+        
+        if (joinExistingBtn) {
+            const newJoinExistingBtn = joinExistingBtn.cloneNode(true);
+            joinExistingBtn.parentNode.replaceChild(newJoinExistingBtn, joinExistingBtn);
+            newJoinExistingBtn.addEventListener('click', () => {
+                modal.style.display = 'none';
+                this.showJoinExistingTeam();
+            });
+        }
+    }
+
     showCreateTeam() {
         const modal = document.getElementById('createTeamModal');
         if (!modal) return;
@@ -336,9 +531,130 @@ class XCountryTracker {
                 const teamName = document.getElementById('teamNameInput').value.trim();
                 if (teamName) {
                     this.createTeam(teamName);
+                } else {
+                    alert('Please enter a team name.');
                 }
             });
         }
+        
+        // Back button
+        const backBtn = document.getElementById('backToCoachSetupBtn');
+        if (backBtn) {
+            const newBackBtn = backBtn.cloneNode(true);
+            backBtn.parentNode.replaceChild(newBackBtn, backBtn);
+            newBackBtn.addEventListener('click', () => {
+                modal.style.display = 'none';
+                this.showCoachTeamSetup();
+            });
+        }
+    }
+
+    showJoinExistingTeam() {
+        const modal = document.getElementById('joinExistingTeamModal');
+        if (!modal) return;
+        
+        modal.style.display = 'block';
+        
+        // Clear input and set up uppercase conversion
+        const teamCodeInput = document.getElementById('coachTeamCodeInput');
+        if (teamCodeInput) {
+            teamCodeInput.value = '';
+            // Convert to uppercase as user types
+            teamCodeInput.addEventListener('input', (e) => {
+                e.target.value = e.target.value.toUpperCase().replace(/[^A-Z]/g, '');
+            });
+        }
+        
+        // Remove existing listeners and add new one
+        const joinBtn = document.getElementById('joinExistingTeamBtn');
+        if (joinBtn) {
+            const newJoinBtn = joinBtn.cloneNode(true);
+            joinBtn.parentNode.replaceChild(newJoinBtn, joinBtn);
+            newJoinBtn.addEventListener('click', () => {
+                this.joinExistingTeam();
+            });
+        }
+        
+        // Back button
+        const backBtn = document.getElementById('backToCoachSetupBtn2');
+        if (backBtn) {
+            const newBackBtn = backBtn.cloneNode(true);
+            backBtn.parentNode.replaceChild(newBackBtn, backBtn);
+            newBackBtn.addEventListener('click', () => {
+                modal.style.display = 'none';
+                this.showCoachTeamSetup();
+            });
+        }
+        
+        // Allow Enter key to submit
+        if (teamCodeInput) {
+            teamCodeInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    this.joinExistingTeam();
+                }
+            });
+        }
+    }
+
+    async joinExistingTeam() {
+        const teamCodeInput = document.getElementById('coachTeamCodeInput');
+        if (!teamCodeInput) return;
+        
+        const coachCode = teamCodeInput.value.trim().toUpperCase();
+        
+        if (!coachCode || !/^[A-Z]{6}$/.test(coachCode)) {
+            alert('Please enter a valid 6-letter coach code.');
+            return;
+        }
+        
+        // Check if team exists by coach code
+        let teamExists = false;
+        let teamName = null;
+        let playerCode = null;
+        
+        if (this.db) {
+            try {
+                const querySnapshot = await this.db.collection('teams')
+                    .where('coachCode', '==', coachCode)
+                    .limit(1)
+                    .get();
+                
+                if (!querySnapshot.empty) {
+                    const teamDoc = querySnapshot.docs[0];
+                    const teamData = teamDoc.data();
+                    teamExists = true;
+                    teamName = teamData.teamName || 'Unknown Team';
+                    playerCode = teamData.playerCode || teamDoc.id;
+                    // Store team name and codes in localStorage
+                    localStorage.setItem(`xcountryTeamName_${playerCode}`, teamName);
+                    this.setTeamCode(playerCode);
+                    this.setCoachCode(coachCode);
+                }
+            } catch (error) {
+                console.error('Error checking team:', error);
+                alert('Error checking team. Please try again.');
+                return;
+            }
+        } else {
+            // If Firebase not available, can't verify coach code
+            alert('Cannot verify coach code offline. Please check your connection.');
+            return;
+        }
+        
+        if (!teamExists) {
+            alert('Coach code not found. Please check the code and try again.');
+            return;
+        }
+        
+        // Codes are already set above, proceed to dashboard
+        document.getElementById('joinExistingTeamModal').style.display = 'none';
+        
+        // Initialize Firebase and show dashboard
+        this.initializeFirebase(() => {
+            this.setupEventListeners();
+            this.showAppropriateView();
+        });
     }
 
     checkStudentNameOnLoad() {
@@ -349,18 +665,46 @@ class XCountryTracker {
     }
 
     async createTeam(teamName) {
-        // Generate a unique 6-digit numeric team code
+        // Generate a unique 6-digit numeric player code
         // This ensures it's always exactly 6 digits (100000 to 999999)
-        const teamCode = String(Math.floor(100000 + Math.random() * 900000));
-        this.setTeamCode(teamCode);
+        const playerCode = String(Math.floor(100000 + Math.random() * 900000));
+        
+        // Generate a unique 6-letter coach code
+        let coachCode = this.generateCoachCode();
+        
+        // Ensure coach code uniqueness (check Firebase if available)
+        if (this.db) {
+            let isUnique = false;
+            let attempts = 0;
+            while (!isUnique && attempts < 10) {
+                const querySnapshot = await this.db.collection('teams')
+                    .where('coachCode', '==', coachCode)
+                    .get();
+                if (querySnapshot.empty) {
+                    isUnique = true;
+                } else {
+                    coachCode = this.generateCoachCode();
+                    attempts++;
+                }
+            }
+        }
+        
+        this.setTeamCode(playerCode);
+        this.setCoachCode(coachCode);
+        
+        // Store team name in localStorage as fallback
+        localStorage.setItem(`xcountryTeamName_${playerCode}`, teamName);
         
         if (this.db) {
             try {
-                await this.db.collection('teams').doc(teamCode).set({
+                await this.db.collection('teams').doc(playerCode).set({
                     teamName: teamName,
+                    playerCode: playerCode,
+                    coachCode: coachCode,
                     createdAt: new Date().toISOString(),
                     coachId: 'coach_' + Date.now()
                 });
+                console.log('Team created with Player Code:', playerCode, 'Coach Code:', coachCode);
             } catch (error) {
                 console.error('Error creating team:', error);
             }
@@ -371,6 +715,14 @@ class XCountryTracker {
             this.setupEventListeners();
             this.showAppropriateView();
         });
+    }
+    
+    getTeamName() {
+        if (!this.teamCode) return null;
+        // Try to get from localStorage first (fastest)
+        const cachedName = localStorage.getItem(`xcountryTeamName_${this.teamCode}`);
+        if (cachedName) return cachedName;
+        return null;
     }
 
     initializeFirebase(callback) {
@@ -476,6 +828,13 @@ class XCountryTracker {
         if (toggleStudentRunsBtn) {
             toggleStudentRunsBtn.addEventListener('click', () => this.toggleStudentRunsList());
         }
+        const createNewTeamBtn = document.getElementById('createNewTeamBtn');
+        if (createNewTeamBtn) {
+            createNewTeamBtn.addEventListener('click', () => {
+                this.closeSettings();
+                this.showCoachTeamSetup();
+            });
+        }
     }
 
     switchTab(tabName) {
@@ -569,7 +928,7 @@ class XCountryTracker {
             pace: pace,
             studentId: this.studentId,
             studentName: this.getStudentName(),
-            teamCode: this.teamCode
+            teamCode: String(this.teamCode) // Ensure teamCode is always a string
         };
 
         this.runs.push(run);
@@ -594,6 +953,25 @@ class XCountryTracker {
         document.getElementById('runDistance').value = '';
         document.getElementById('runMinutes').value = '';
         document.getElementById('runSeconds').value = '';
+        
+        // Show confirmation message
+        this.showRunConfirmation();
+    }
+    
+    showRunConfirmation() {
+        const confirmationMsg = document.getElementById('runConfirmationMessage');
+        if (confirmationMsg) {
+            confirmationMsg.style.display = 'flex';
+            confirmationMsg.classList.add('show');
+            
+            // Hide after 2 seconds
+            setTimeout(() => {
+                confirmationMsg.classList.remove('show');
+                setTimeout(() => {
+                    confirmationMsg.style.display = 'none';
+                }, 300); // Wait for fade-out animation
+            }, 2000);
+        }
     }
 
     async deleteRun(id) {
@@ -867,38 +1245,76 @@ class XCountryTracker {
 
     async renderCoachDashboard() {
         if (!this.teamCode) {
-            document.getElementById('coachTeamName').textContent = 'Team: No team code';
+            const teamNameEl = document.getElementById('coachTeamName');
+            if (teamNameEl) teamNameEl.textContent = 'Team: No team code';
             return;
         }
 
+        // Get team name - try localStorage first, then Firebase
+        let teamName = this.getTeamName();
+        const teamNameEl = document.getElementById('coachTeamName');
+        
         // Get data from Firebase
         let studentsMap = new Map();
         
         if (this.db) {
             try {
-                // Get team info
+                // Get team info from Firebase
                 const teamDoc = await this.db.collection('teams').doc(this.teamCode).get();
                 if (teamDoc.exists) {
                     const teamData = teamDoc.data();
-                    document.getElementById('coachTeamName').textContent = `Team: ${teamData.teamName || this.teamCode}`;
-                } else {
-                    document.getElementById('coachTeamName').textContent = `Team: ${this.teamCode}`;
+                    teamName = teamData.teamName || teamName || this.teamCode;
+                    // Update localStorage with Firebase data
+                    if (teamData.teamName) {
+                        localStorage.setItem(`xcountryTeamName_${this.teamCode}`, teamData.teamName);
+                    }
+                    // Load coach code if available
+                    if (teamData.coachCode && /^[A-Za-z]{6}$/.test(teamData.coachCode)) {
+                        this.setCoachCode(teamData.coachCode);
+                    }
+                } else if (!teamName) {
+                    // Team doesn't exist in Firebase, use code as fallback
+                    teamName = this.teamCode;
                 }
+            } catch (error) {
+                console.error('Error loading team from Firebase:', error);
+                // Use cached name or code as fallback
+                if (!teamName) teamName = this.teamCode;
+            }
+        } else {
+            // Firebase not available, use cached name or code
+            if (!teamName) teamName = this.teamCode;
+        }
+        
+        // Update team name display
+        if (teamNameEl) {
+            teamNameEl.textContent = `Team: ${teamName}`;
+        }
 
+        if (this.db) {
+            try {
+                // Ensure teamCode is a string for query
+                const teamCodeStr = String(this.teamCode);
+                console.log('Loading runs for team code:', teamCodeStr);
+                
                 // Get all runs for this team from Firebase
                 const runsSnapshot = await this.db.collection('runs')
-                    .where('teamCode', '==', this.teamCode)
+                    .where('teamCode', '==', teamCodeStr)
                     .orderBy('date', 'desc')
                     .get();
+                
+                console.log(`Found ${runsSnapshot.size} runs for team ${teamCodeStr}`);
 
                 // Group runs by student
                 runsSnapshot.forEach(doc => {
                     const run = doc.data();
                     const studentId = run.studentId || 'unknown';
+                    const studentName = run.studentName || 'Unknown Student';
                     
                     if (!studentsMap.has(studentId)) {
                         studentsMap.set(studentId, {
                             studentId: studentId,
+                            studentName: studentName,
                             runs: [],
                             totalRuns: 0,
                             totalDistance: 0,
@@ -916,9 +1332,17 @@ class XCountryTracker {
                     if (run.score > student.bestScore) {
                         student.bestScore = run.score;
                     }
+                    // Update student name if it's in the run data
+                    if (run.studentName && !student.studentName) {
+                        student.studentName = run.studentName;
+                    }
                 });
             } catch (error) {
-                console.error('Error loading from Firebase:', error);
+                console.error('Error loading runs from Firebase:', error);
+                // If the error is about missing index, log it but continue
+                if (error.message && error.message.includes('index')) {
+                    console.warn('Firestore index may need to be created. Check Firebase console.');
+                }
             }
         }
 
@@ -1329,14 +1753,22 @@ class XCountryTracker {
     setupCoachListener() {
         if (!this.db || !this.teamCode) return;
 
+        // Ensure teamCode is a string
+        const teamCodeStr = String(this.teamCode);
+
         // Listen for new runs in real-time
         this.db.collection('runs')
-            .where('teamCode', '==', this.teamCode)
+            .where('teamCode', '==', teamCodeStr)
             .orderBy('date', 'desc')
             .limit(1)
             .onSnapshot(() => {
                 // Refresh dashboard when new runs are added
                 this.renderCoachDashboard();
+            }, (error) => {
+                console.error('Error in coach listener:', error);
+                if (error.message && error.message.includes('index')) {
+                    console.warn('Firestore index may need to be created for teamCode and date fields.');
+                }
             });
     }
 
@@ -1388,17 +1820,35 @@ class XCountryTracker {
             if (coachSettings) coachSettings.style.display = 'block';
             
             const coachTeamCode = document.getElementById('coachTeamCodeSettings');
+            const playerCodeDisplay = document.getElementById('playerCodeDisplay');
+            const coachCodeDisplay = document.getElementById('coachCodeDisplay');
+            
+            // Display team name
             if (coachTeamCode) {
-                // Validate and display team code (should be 6 digits)
-                if (this.teamCode && /^\d{6}$/.test(this.teamCode)) {
-                    coachTeamCode.textContent = `Team Code: ${this.teamCode}`;
+                const teamName = this.getTeamName();
+                if (teamName) {
+                    coachTeamCode.textContent = `Team: ${teamName}`;
                 } else {
-                    coachTeamCode.textContent = `Team Code: Not set (Please create a new team)`;
-                    // Clear invalid team code
-                    if (this.teamCode) {
-                        localStorage.removeItem('xcountryTeamCode');
-                        this.teamCode = null;
-                    }
+                    coachTeamCode.textContent = `Team: Not set`;
+                }
+            }
+            
+            // Display player code (for sharing with students)
+            if (playerCodeDisplay) {
+                if (this.teamCode && /^\d{6}$/.test(this.teamCode)) {
+                    playerCodeDisplay.textContent = `Player Code: ${this.teamCode}`;
+                } else {
+                    playerCodeDisplay.textContent = `Player Code: Not set`;
+                }
+            }
+            
+            // Display coach code (for sharing with other coaches)
+            if (coachCodeDisplay) {
+                const coachCode = this.getCoachCode();
+                if (coachCode && /^[A-Za-z]{6}$/.test(coachCode)) {
+                    coachCodeDisplay.textContent = `Coach Code: ${coachCode.toUpperCase()}`;
+                } else {
+                    coachCodeDisplay.textContent = `Coach Code: Not set`;
                 }
             }
         }

@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#DC143C">
+    <title>X-Country Tracker</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏃</text></svg>">
+    <link rel="manifest" href="manifest.json" onerror="this.remove()">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="apple-touch-icon" href="icon-192.png" onerror="this.remove()">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <!-- Mode Selection Modal (shown on first launch) -->
+    <div class="modal" id="modeSelectionModal">
+        <div class="modal-content mode-selection-content">
+            <h2>Welcome to X-Country Tracker</h2>
+            <p style="margin-bottom: 30px; color: var(--text-secondary);">Choose your role:</p>
+            <div class="mode-buttons">
+                <button type="button" class="mode-selection-btn" id="studentModeBtn">
+                    <div class="mode-title">I'm a Student</div>
+                    <div class="mode-description">Track my own running progress</div>
+                </button>
+                <button type="button" class="mode-selection-btn" id="coachModeBtn">
+                    <div class="mode-title">I'm a Coach</div>
+                    <div class="mode-description">View all my students' progress</div>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Team Code Modal (for students) -->
+    <div class="modal" id="teamCodeModal" style="display: none;">
+        <div class="modal-content">
+            <h2>Enter Team Code</h2>
+            <p style="margin-bottom: 20px; color: var(--text-secondary);">Enter your team code to join:</p>
+            <div class="form-group">
+                <input type="text" id="teamCodeInput" placeholder="Enter team code" maxlength="20" style="text-transform: uppercase;">
+            </div>
+            <button id="joinTeamBtn" class="btn btn-primary">Join Team</button>
+        </div>
+    </div>
+
+    <!-- Student Name Modal (for students) -->
+    <div class="modal" id="studentNameModal" style="display: none;">
+        <div class="modal-content">
+            <h2>Enter Your Name</h2>
+            <p style="margin-bottom: 20px; color: var(--text-secondary);">Please enter your name so your coach can identify you:</p>
+            <div class="form-group">
+                <label for="studentFirstNameInput">First Name</label>
+                <input type="text" id="studentFirstNameInput" placeholder="First Name" maxlength="30" required>
+            </div>
+            <div class="form-group">
+                <label for="studentLastNameInput">Last Name</label>
+                <input type="text" id="studentLastNameInput" placeholder="Last Name" maxlength="30" required>
+            </div>
+            <button id="saveStudentNameBtn" class="btn btn-primary">Save Name</button>
+        </div>
+    </div>
+
+    <!-- Create Team Modal (for coaches) -->
+    <div class="modal" id="createTeamModal" style="display: none;">
+        <div class="modal-content">
+            <h2>Create Team</h2>
+            <p style="margin-bottom: 20px; color: var(--text-secondary);">Create a new team and share the code with your students:</p>
+            <div class="form-group">
+                <label for="teamNameInput">Team Name</label>
+                <input type="text" id="teamNameInput" placeholder="e.g., Bulldogs 2025" maxlength="30">
+            </div>
+            <button id="createTeamBtn" class="btn btn-primary">Create Team</button>
+        </div>
+    </div>
+
+    <!-- Student View Container -->
+    <div class="container" id="studentView" style="display: none;">
+        <header>
+            <div style="position: relative; width: 100%;">
+                <button id="settingsBtn" class="settings-btn" title="Settings" aria-label="Settings">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24"></path>
+                    </svg>
+                </button>
+            </div>
+            <h1>X-Country Tracker</h1>
+            <div id="studentNameDisplay" style="margin-top: 10px; font-size: 16px; color: white; text-align: center; font-weight: 600; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);"></div>
+            <div id="teamCodeDisplay" style="margin-top: 8px; font-size: 14px; color: white; text-align: center; font-weight: 500; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);"></div>
+        </header>
+
+        <!-- Tab Navigation -->
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="add-run">Add Run</button>
+            <button class="tab-btn" data-tab="stats">Stats</button>
+        </div>
+
+        <!-- Add Run Tab -->
+        <div class="tab-content active" id="add-run-tab">
+            <div class="add-run-section">
+                <h2>Add Run</h2>
+                <div class="form-group">
+                    <label for="runDate">Date</label>
+                    <input type="date" id="runDate" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="runDistance">Distance (miles)</label>
+                        <input type="number" id="runDistance" step="0.01" min="0" placeholder="0.00" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="runTime">Time</label>
+                        <div class="time-input-group">
+                            <input type="number" id="runMinutes" min="0" max="59" placeholder="MM" required>
+                            <span>:</span>
+                            <input type="number" id="runSeconds" min="0" max="59" placeholder="SS" required>
+                        </div>
+                    </div>
+                </div>
+                <button id="addRunBtn" class="btn btn-primary">Add Run</button>
+            </div>
+        </div>
+
+        <!-- Stats Tab -->
+        <div class="tab-content" id="stats-tab">
+            <!-- Statistics Cards -->
+            <div class="stats-grid" id="statsGrid">
+                <!-- Stats will be dynamically added here -->
+            </div>
+
+            <!-- Charts Section -->
+            <div class="charts-section">
+                <h2>Progress Charts</h2>
+                <div class="chart-container">
+                    <canvas id="scoreChart"></canvas>
+                </div>
+                <div class="chart-container">
+                    <canvas id="paceChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Runs List (Collapsible) -->
+            <div class="runs-section">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h2 style="margin: 0;">Recent Runs</h2>
+                    <button id="toggleStudentRunsBtn" class="btn btn-secondary" style="font-size: 12px; padding: 6px 12px;">
+                        <span id="toggleStudentRunsText">Show Runs</span>
+                        <span id="toggleStudentRunsIcon" style="margin-left: 6px;">▼</span>
+                    </button>
+                </div>
+                <div id="studentRunsContainer" style="display: none;">
+                    <div id="runsList" class="runs-list">
+                        <!-- Runs will be dynamically added here -->
+                    </div>
+                    <div class="empty-state" id="emptyState">
+                        <p>No runs recorded yet.</p>
+                        <p>Add your first run in the "Add Run" tab!</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Coach View Container -->
+    <div class="container" id="coachView" style="display: none;">
+        <header>
+            <div style="position: relative; width: 100%;">
+                <button id="coachSettingsBtn" class="settings-btn" title="Settings" aria-label="Settings">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24"></path>
+                    </svg>
+                </button>
+            </div>
+            <h1>X-Country Tracker</h1>
+            <p class="subtitle">Coach Dashboard</p>
+            <p class="subtitle" id="coachTeamName" style="margin-top: 5px;">Team: Loading...</p>
+        </header>
+
+        <!-- Team Stats -->
+        <div class="team-stats-section">
+            <h2>Team Overview</h2>
+            <div class="stats-grid" id="teamStatsGrid">
+                <!-- Team stats will be dynamically added here -->
+            </div>
+        </div>
+
+        <!-- Students List -->
+        <div class="students-section" id="studentsListSection">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h2 style="margin: 0;">Students</h2>
+                <button id="generateTestDataBtn" class="btn btn-secondary" style="font-size: 12px; padding: 8px 12px;">
+                    Generate Test Data
+                </button>
+            </div>
+            <div id="studentsList" class="students-list">
+                <!-- Students will be dynamically added here -->
+            </div>
+            <div class="empty-state" id="studentsEmptyState">
+                <p>No students have joined yet.</p>
+                <p>Share your team code with students to get started!</p>
+                <p style="margin-top: 15px; font-size: 14px; color: var(--text-secondary);">
+                    <strong>Testing?</strong> Click "Generate Test Data" to create sample student data.
+                </p>
+            </div>
+        </div>
+
+        <!-- Student Detail View -->
+        <div class="student-detail-view" id="studentDetailView" style="display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <button id="backToStudentsBtn" class="back-btn-small" title="Back to Students">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M19 12H5M12 19l-7-7 7-7"/>
+                    </svg>
+                </button>
+                <h2 id="studentDetailName" style="margin: 0; flex: 1; text-align: center;">Student Name</h2>
+                <div style="width: 40px;"></div> <!-- Spacer for centering -->
+            </div>
+
+            <!-- Student Stats Summary -->
+            <div class="stats-grid" id="studentDetailStats">
+                <!-- Stats will be dynamically added here -->
+            </div>
+
+            <!-- Student Charts -->
+            <div class="charts-section" style="margin-top: 20px;">
+                <h2>Progress Charts</h2>
+                <div class="chart-container">
+                    <canvas id="studentScoreChart"></canvas>
+                </div>
+                <div class="chart-container">
+                    <canvas id="studentPaceChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Student Runs List (Collapsible) -->
+            <div class="runs-section" style="margin-top: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h2 style="margin: 0;">Runs</h2>
+                    <button id="toggleRunsBtn" class="btn btn-secondary" style="font-size: 12px; padding: 6px 12px;">
+                        <span id="toggleRunsText">Show Runs</span>
+                        <span id="toggleRunsIcon" style="margin-left: 6px;">▼</span>
+                    </button>
+                </div>
+                <div id="studentDetailRunsContainer" style="display: none;">
+                    <div id="studentDetailRuns" class="runs-list">
+                        <!-- Runs will be dynamically added here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Update Banner -->
+    <div id="updateBanner" class="update-banner hidden">
+        <div class="update-banner-content">
+            <span>A new version is available!</span>
+            <div class="update-banner-buttons">
+                <button id="updateNowBtn" class="btn btn-primary" style="padding: 6px 12px; font-size: 12px;">Update Now</button>
+                <button id="updateLaterBtn" class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px; margin-left: 8px;">Later</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal" id="settingsModal" style="display: none;">
+        <div class="modal-content">
+            <span class="close" id="closeSettingsModal">&times;</span>
+            <h2>Settings</h2>
+            <div class="modal-body">
+                <div class="settings-section">
+                    <h3>App Version</h3>
+                    <p id="versionText" style="margin-bottom: 10px; color: var(--text-secondary);">Loading...</p>
+                    <button id="checkUpdateBtn" class="btn btn-secondary" style="width: 100%; margin-bottom: 15px;">
+                        <span id="updateBtnText">Check for Updates</span>
+                    </button>
+                    <p id="updateStatusText" style="font-size: 12px; margin-top: 5px; min-height: 20px;"></p>
+                </div>
+                <div class="settings-section">
+                    <h3>Mode</h3>
+                    <p id="currentModeDisplay" style="margin-bottom: 15px; color: var(--text-secondary);"></p>
+                    <button id="switchModeBtn" class="btn btn-secondary" style="width: 100%;">Switch Mode</button>
+                </div>
+                <div class="settings-section" id="studentSettings" style="display: none;">
+                    <h3>Your Information</h3>
+                    <p id="currentStudentNameDisplay" style="margin-bottom: 10px; color: var(--text-secondary);"></p>
+                    <p id="currentTeamCodeDisplay" style="margin-bottom: 15px; color: var(--text-secondary);"></p>
+                </div>
+                <div class="settings-section" id="coachSettings" style="display: none;">
+                    <h3>Team Management</h3>
+                    <p id="coachTeamCodeSettings" style="margin-bottom: 15px; color: var(--text-secondary);"></p>
+                    <button id="createNewTeamBtn" class="btn btn-secondary" style="width: 100%; margin-bottom: 10px;">Create New Team</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDKs (only loads if not file:// protocol) -->
+    <script>
+        if (window.location.protocol !== 'file:') {
+            // Load Firebase App first
+            const script1 = document.createElement('script');
+            script1.src = 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js';
+            
+            script1.onload = () => {
+                // Once Firebase App is loaded, load Firestore
+                const script2 = document.createElement('script');
+                script2.src = 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js';
+                
+                script2.onload = () => {
+                    // Once both are loaded, load the config
+                    const configScript = document.createElement('script');
+                    configScript.src = 'firebase-config.js';
+                    document.head.appendChild(configScript);
+                };
+                document.head.appendChild(script2);
+            };
+            document.head.appendChild(script1);
+        }
+    </script>
+
+    <script src="script.js"></script>
+</body>
+</html>
+

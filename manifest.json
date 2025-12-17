@@ -2,6 +2,7 @@
   "name": "X-Country Tracker",
   "short_name": "X-Country",
   "description": "Track your cross country running progress",
+  "version": "1.1.0",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#DC143C",
